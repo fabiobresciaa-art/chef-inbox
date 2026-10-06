@@ -1,3 +1,4 @@
 fastmcp
 pillow
 zxing-cpp
+anthropic

@@ -6,7 +6,9 @@ confirmed. The ship asks for new ones when it is open, handles them, then confir
 from __future__ import annotations
 
 import base64
+import io
 import json
+import os
 import re
 import urllib.request
 
@@ -58,14 +60,32 @@ def pending(tg, allowed: set[int], after: int = 0, limit: int = 10) -> dict:
     return {"items": sorted(items, key=lambda i: i["update_id"])[:limit]}
 
 
+def shrink(data: bytes, side: int = 1024) -> bytes:
+    """Smaller JPEG for the trip to the ship (and cheaper to analyse). Falls back to the original."""
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(data))
+        im.thumbnail((side, side))
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, "JPEG", quality=80)
+        return buf.getvalue()
+    except Exception:
+        return data
+
+
 def photo_payload(tg, file_id: str) -> dict:
-    """The photo (base64, fetched into memory only) and, if it shows a known barcode, the product."""
+    """The photo (base64, fetched into memory only) and, if it shows a known barcode, the product.
+
+    If ANTHROPIC_API_KEY is set on the server, dish photos are also analysed here ("analysis"), so the
+    ship works even in views that cannot send photos to Claude themselves. That uses your API credits.
+    """
     try:
         data = tg.download(tg.call("getFile", file_id=file_id)["file_path"])
     except Exception:
         return {"ok": False, "error": "could not fetch the photo from Telegram"}
-    out = {"ok": True, "mime": "image/jpeg", "b64": base64.b64encode(data).decode()}
-    code = food_ai.decode_barcode(data)
+    small = shrink(data)
+    out = {"ok": True, "mime": "image/jpeg", "b64": base64.b64encode(small).decode()}
+    code = food_ai.decode_barcode(data)  # read the barcode on the full-size original
     if code:
         try:
             prod = food_ai.lookup_barcode(code)
@@ -73,6 +93,12 @@ def photo_payload(tg, file_id: str) -> dict:
             prod = None
         if prod:
             out["barcode"] = {"code": code, **prod}
+            return out
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            out["analysis"] = food_ai.estimate_dish(small, "image/jpeg")
+        except Exception:
+            pass
     return out
 
 
