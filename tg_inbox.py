@@ -36,7 +36,7 @@ class Telegram:
 
 
 def pending(tg, allowed: set[int], after: int = 0, limit: int = 10) -> dict:
-    """New photos and typed meals from allowed people, oldest first."""
+    """New photos, typed meals (name + kcal) and meal descriptions from allowed people, oldest first."""
     if not allowed:
         return {"items": [], "error": "Set TELEGRAM_ALLOWED_IDS on the server."}
     try:
@@ -54,9 +54,12 @@ def pending(tg, allowed: set[int], after: int = 0, limit: int = 10) -> dict:
         if m.get("photo"):
             items.append({**base, "kind": "photo", "file_id": m["photo"][-1]["file_id"], "caption": m.get("caption") or ""})
         elif m.get("text"):
-            q = food_ai.parse_quick_meal(DATE.sub("", m["text"]).strip())
-            if q:
+            txt = DATE.sub("", m["text"]).strip()
+            q = food_ai.parse_quick_meal(txt)
+            if q:  # "pasta 600": the person gave the kcal
                 items.append({**base, "kind": "meal", "name": q[0], "kcal": q[1]})
+            elif txt and not txt.startswith("/"):  # a description: Chef works out the kcal
+                items.append({**base, "kind": "describe", "text": txt[:300]})
     return {"items": sorted(items, key=lambda i: i["update_id"])[:limit]}
 
 
