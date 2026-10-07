@@ -62,7 +62,7 @@ def decode_barcode(image: bytes) -> str | None:
 
 
 def lookup_barcode(code: str) -> dict | None:
-    """Open Food Facts lookup. Returns {name, kcal100, serving_g} or None if unknown."""
+    """Open Food Facts lookup. Returns {name, kcal100, serving_g, p100, c100, f100} or None if unknown."""
     if not re.fullmatch(r"\d{6,14}", code):
         return None
     url = (f"https://world.openfoodfacts.org/api/v2/product/{code}.json"
@@ -81,7 +81,12 @@ def lookup_barcode(code: str) -> dict | None:
         return None
     sq = p.get("serving_quantity")
     name = " ".join(x for x in (p.get("brands", "").split(",")[0].strip(), p.get("product_name", "")) if x) or code
-    return {"name": name, "kcal100": float(kcal100), "serving_g": float(sq) if sq else None}
+    def per100(key):
+        v = n.get(key)
+        return float(v) if isinstance(v, (int, float)) else None
+
+    return {"name": name, "kcal100": float(kcal100), "serving_g": float(sq) if sq else None,
+            "p100": per100("proteins_100g"), "c100": per100("carbohydrates_100g"), "f100": per100("fat_100g")}
 
 
 def kcal_for_grams(kcal100: float, grams: float) -> int:
